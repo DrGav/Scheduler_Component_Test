@@ -1,0 +1,95 @@
+﻿@page "/"
+@using Radzen.Blazor
+@inject HttpClient Http
+@inject DialogService DialogService
+
+
+<RadzenScheduler @ref=@scheduler SlotRender=@OnSlotRender style="height: 768px;" TItem="Appointment" Data=@appointments StartProperty="Start" EndProperty="End"
+                 TextProperty="Text" SelectedIndex="2"
+                 SlotSelect=@OnSlotSelect AppointmentSelect=@OnAppointmentSelect AppointmentRender=@OnAppointmentRender>
+    <RadzenDayView />
+    <RadzenWeekView />
+    <RadzenMonthView />
+</RadzenScheduler>
+
+
+@code {
+    RadzenScheduler<Appointment> scheduler;
+    Dictionary<DateTime, string> events = new Dictionary<DateTime, string>();
+    IList<Appointment> appointments = new List<Appointment>();
+
+
+    protected override async Task OnInitializedAsync()
+    {
+        await GetAppointments();
+    }
+
+    void OnSlotRender(SchedulerSlotRenderEventArgs args)
+    {
+        // Highlight today in month view
+        if (args.View.Text == "Month" && args.Start.Date == DateTime.Today)
+        {
+            args.Attributes["style"] = "background: rgba(255,220,40,.2);";
+        }
+
+        // Highlight working hours (9-18)
+        if ((args.View.Text == "Week" || args.View.Text == "Day") && args.Start.Hour > 8 && args.Start.Hour < 19)
+        {
+            args.Attributes["style"] = "background: rgba(255,220,40,.2);";
+        }
+    }
+
+
+
+    async Task OnSlotSelect(SchedulerSlotSelectEventArgs args)
+    {
+
+        Appointment data = await DialogService.OpenAsync<AddAppointmentPage>("Add Appointment",
+            new Dictionary<string, object> { { "Start", args.Start }, { "End", args.End } });
+
+        if (data != null)
+        {
+            data.AppointmentOwnerId = 1;
+            data.IsDeleted = false;
+            await AddAppointment(data);
+            await GetAppointments();
+        }
+    }
+
+    async Task OnAppointmentSelect(SchedulerAppointmentSelectEventArgs<Appointment> args)
+    {
+
+        Appointment updatedAppointment = await DialogService.OpenAsync<EditAppointmentPage>("Edit Appointment", new Dictionary<string, object> { { "model", args.Data } });
+        await UpdateAppointment(updatedAppointment);
+        await GetAppointments();
+    }
+
+    void OnAppointmentRender(SchedulerAppointmentRenderEventArgs<Appointment> args)
+    {
+        // Never call StateHasChanged in AppointmentRender - would lead to infinite loop
+
+        if (args.Data.Text == "Birthday")
+        {
+            args.Attributes["style"] = "background: red";
+        }
+    }
+
+
+    private async Task GetAppointments()
+    {
+        appointments = await Http.GetFromJsonAsync<Appointment[]>("https://localhost:7082/diaryentries");
+    }
+
+    private async Task AddAppointment(Appointment appointment)
+    {
+        await Http.PostAsJsonAsync<Appointment>("https://localhost:7082/diaryentries", appointment);
+    }
+
+    private async Task UpdateAppointment(Appointment appointment)
+    {
+        if (appointment != null)
+        {
+            await Http.PutAsJsonAsync<Appointment>("https://localhost:7082/diaryentry" + @"/" + appointment.Id, appointment);
+        }
+    }
+}
